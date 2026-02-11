@@ -7,10 +7,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Source
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           repository: MT6789-Rock/kernel_xiaomi_rock
-          ref: master # Kita coba branch master dulu
+          ref: master
 
       - name: Install Toolchain & Dependencies
         run: |
@@ -19,21 +19,24 @@ jobs:
 
       - name: Kill SELinux (The Alien Patch)
         run: |
-          # Memaksa SELinux supaya bisa dimatikan via CMDLINE
-          sed -i 's/bool "NSA SELinux support"/bool "NSA SELinux support (ALIEN MOD)"/g' security/selinux/Kconfig
-          sed -i 's/default y/default n/g' security/selinux/Kconfig
-          echo "SELinux has been neutralized."
+          # Memaksa SELinux supaya bisa dimatikan
+          if [ -f security/selinux/Kconfig ]; then
+            sed -i 's/bool "NSA SELinux support"/bool "NSA SELinux support (ALIEN MOD)"/g' security/selinux/Kconfig
+            sed -i 's/default y/default n/g' security/selinux/Kconfig
+            echo "SELinux has been neutralized."
+          fi
 
       - name: Build Kernel
         run: |
           export ARCH=arm64
           export SUBARCH=arm64
-          # Mencari defconfig yang cocok secara otomatis
+          # Mencari defconfig secara otomatis
           CONF=$(ls arch/arm64/configs/ | grep -E "rock|mt6789" | head -n 1)
+          if [ -z "$CONF" ]; then CONF="vendor/rock_defconfig"; fi
           echo "Using config: $CONF"
+          
           make O=out $CONF
           
-          # Proses masak kernel (ini butuh waktu)
           make -j$(nproc --all) O=out \
                ARCH=arm64 \
                CC=clang \
@@ -44,8 +47,7 @@ jobs:
                STRIP=llvm-strip
 
       - name: Upload Result
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: Alien-Kernel-PocoM5
           path: out/arch/arm64/boot/Image.gz
-          
