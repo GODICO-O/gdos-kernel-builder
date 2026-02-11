@@ -13,17 +13,25 @@ jobs:
       - name: Install Build Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y bc build-essential flex bison lz4 libssl-dev libelf-dev clang lld llvm
+          sudo apt-get install -y bc build-essential flex bison lz4 libssl-dev libelf-dev clang lld llvm python3 git
+
+      - name: Setup Toolchain (Clang & GCC)
+        run: |
+          mkdir toolchain
+          cd toolchain
+          # Download Clang resmi dari Google
+          wget -q https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/master/clang-r416183b1.tar.gz
+          tar -xf clang-r416183b1.tar.gz
+          cd ..
+          echo "$(pwd)/toolchain/bin" >> $GITHUB_PATH
 
       - name: Configure SELinux Policy
         run: |
           cd kernel_source
-          # Mencari file konfigurasi SELinux secara otomatis
           KCONFIG_PATH=$(find . -name Kconfig | grep -i "selinux" | head -n 1)
           if [ -n "$KCONFIG_PATH" ]; then
-            # Mengubah default support SELinux menjadi 'n' (disabled)
             sed -i 's/default y/default n/g' $KCONFIG_PATH
-            echo "SELinux configuration updated at $KCONFIG_PATH"
+            echo "SELinux configuration updated."
           fi
 
       - name: Build Kernel Image
@@ -32,19 +40,24 @@ jobs:
           export ARCH=arm64
           export SUBARCH=arm64
           
-          # Menggunakan GKI Defconfig sebagai basis utama
+          # Setup Environment secara manual agar tidak 'not found'
+          CLANG_DIR=$(pwd)/../toolchain/bin
+          export PATH="$CLANG_DIR:$PATH"
+          
           CONF="gki_defconfig"
-          echo "Using configuration: $CONF"
           
-          # Menyiapkan file .config
+          # Buat file config
           make O=out ARCH=arm64 $CONF
-          make O=out ARCH=arm64 olddefconfig
           
-          # Proses kompilasi menggunakan LLVM/Clang
+          # Mulai masak kernel
           make -j$(nproc --all) O=out \
                ARCH=arm64 \
                CC=clang \
+               CLANG_TRIPLE=aarch64-linux-gnu- \
                CROSS_COMPILE=aarch64-linux-gnu- \
+               CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+               LD=ld.lld \
+               AR=llvm-ar \
                NM=llvm-nm \
                OBJCOPY=llvm-objcopy \
                OBJDUMP=llvm-objdump \
