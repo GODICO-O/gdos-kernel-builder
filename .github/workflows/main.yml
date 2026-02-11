@@ -8,8 +8,7 @@ jobs:
     steps:
       - name: Manual Clone Source
         run: |
-          # Kita pakai repo community yang branch-nya jelas buat Poco M5
-          git clone --depth=1 https://github.com/MT6789-Rock/android_kernel_xiaomi_mt6789.git kernel_source
+          git clone --depth=1 https://github.com/Poco-M5-Development/android_kernel_xiaomi_mt6789.git kernel_source
           
       - name: Install Toolchain & Dependencies
         run: |
@@ -19,7 +18,6 @@ jobs:
       - name: Kill SELinux
         run: |
           cd kernel_source
-          # Patch SELinux supaya bisa dinonaktifkan
           KCONFIG_PATH=$(find . -name Kconfig | grep -i "selinux" | head -n 1)
           if [ -n "$KCONFIG_PATH" ]; then
             sed -i 's/bool "NSA SELinux support"/bool "NSA SELinux support (ALIEN MOD)"/g' $KCONFIG_PATH
@@ -33,8 +31,9 @@ jobs:
           export ARCH=arm64
           export SUBARCH=arm64
           
-          # Cari defconfig (biasanya rock_defconfig atau gki_defconfig)
-          CONF=$(ls arch/arm64/configs/ | grep -iE "rock|mt6789|gki" | head -n 1)
+          # Auto-detect defconfig
+          CONF=$(ls arch/arm64/configs/ | grep -iE "rock|mt6789" | head -n 1)
+          if [ -z "$CONF" ]; then CONF="gki_defconfig"; fi
           echo "Using config: $CONF"
           
           make O=out ARCH=arm64 $CONF
