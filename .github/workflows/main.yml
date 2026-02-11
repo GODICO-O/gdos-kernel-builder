@@ -8,8 +8,8 @@ jobs:
     steps:
       - name: Manual Clone Source
         run: |
-          # Kita clone manual branch 'rock-s-oss' dari MiCode
-          git clone --depth=1 https://github.com/MiCode/Xiaomi_Kernel_OpenSource.git -b rock-s-oss kernel_source
+          # Clone tanpa sebut nama branch, biar GitHub yang nentuin default-nya
+          git clone --depth=1 https://github.com/MiCode/Xiaomi_Kernel_OpenSource.git kernel_source
           
       - name: Install Toolchain & Dependencies
         run: |
@@ -19,6 +19,7 @@ jobs:
       - name: Kill SELinux
         run: |
           cd kernel_source
+          # Cari file Kconfig SELinux
           KCONFIG_PATH=$(find . -name Kconfig | grep -i "selinux" | head -n 1)
           if [ -n "$KCONFIG_PATH" ]; then
             sed -i 's/bool "NSA SELinux support"/bool "NSA SELinux support (ALIEN MOD)"/g' $KCONFIG_PATH
@@ -32,8 +33,10 @@ jobs:
           export ARCH=arm64
           export SUBARCH=arm64
           
-          # Mencari defconfig yang bener di dalam folder arch/arm64/configs
-          CONF=$(ls arch/arm64/configs/ | grep -iE "rock|mt6789" | head -n 1)
+          # Trik: Cari file defconfig yang ada kata 'rock' atau 'mt6789'
+          # Kalau nggak nemu, kita pakai gki_defconfig (standar Android baru)
+          CONF=$(find arch/arm64/configs/ -name "*rock*" -o -name "*mt6789*" | head -n 1 | xargs basename)
+          if [ -z "$CONF" ]; then CONF="gki_defconfig"; fi
           echo "Using config: $CONF"
           
           make O=out ARCH=arm64 $CONF
