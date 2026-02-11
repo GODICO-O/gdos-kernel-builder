@@ -9,23 +9,20 @@ jobs:
       - name: Checkout Source
         uses: actions/checkout@v4
         with:
-          repository: MT6789-Rock/kernel_xiaomi_rock
+          repository: MiCode/Xiaomi_Kernel_OpenSource
+          ref: rock-s-oss
 
       - name: Install Toolchain & Dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y bc build-essential flex bison lz4 libssl-dev libelf-dev clang lld llvm
 
-      - name: Kill SELinux (The Alien Patch)
+      - name: Kill SELinux
         run: |
-          # Cari file Kconfig SELinux secara agresif
           KCONFIG_PATH=$(find . -name Kconfig | grep -i "selinux" | head -n 1)
           if [ -n "$KCONFIG_PATH" ]; then
             sed -i 's/bool "NSA SELinux support"/bool "NSA SELinux support (ALIEN MOD)"/g' $KCONFIG_PATH
             sed -i 's/default y/default n/g' $KCONFIG_PATH
-            echo "SELinux has been neutralized at $KCONFIG_PATH"
-          else
-            echo "Warning: Kconfig not found, skipping patch."
           fi
 
       - name: Build Kernel
@@ -33,11 +30,10 @@ jobs:
           export ARCH=arm64
           export SUBARCH=arm64
           
-          # Nyari defconfig secara otomatis di folder arch/arm64/configs
-          CONF=$(ls arch/arm64/configs/ | grep -iE "rock|mt6789|tapa" | head -n 1)
-          echo "Using config: $CONF"
+          # Di repo Xiaomi resmi, namanya biasanya gki_defconfig atau spesifik rock
+          CONF="rock_defconfig"
           
-          make O=out $CONF
+          make O=out ARCH=arm64 $CONF
           
           make -j$(nproc --all) O=out \
                ARCH=arm64 \
