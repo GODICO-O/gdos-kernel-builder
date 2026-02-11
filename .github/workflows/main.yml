@@ -10,7 +10,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: MT6789-Rock/kernel_xiaomi_rock
-          ref: master
+          ref: tapa  # <--- INI KUNCINYA! Tapa adalah branch untuk Poco M5
 
       - name: Install Toolchain & Dependencies
         run: |
@@ -19,24 +19,26 @@ jobs:
 
       - name: Kill SELinux (The Alien Patch)
         run: |
-          # Memaksa SELinux supaya bisa dimatikan
-          if [ -f security/selinux/Kconfig ]; then
-            sed -i 's/bool "NSA SELinux support"/bool "NSA SELinux support (ALIEN MOD)"/g' security/selinux/Kconfig
-            sed -i 's/default y/default n/g' security/selinux/Kconfig
-            echo "SELinux has been neutralized."
+          # Mencari file Kconfig SELinux di mana pun dia berada
+          KCONFIG_PATH=$(find . -name Kconfig | grep selinux)
+          if [ -f "$KCONFIG_PATH" ]; then
+            sed -i 's/bool "NSA SELinux support"/bool "NSA SELinux support (ALIEN MOD)"/g' $KCONFIG_PATH
+            sed -i 's/default y/default n/g' $KCONFIG_PATH
+            echo "SELinux has been neutralized at $KCONFIG_PATH"
           fi
 
       - name: Build Kernel
         run: |
           export ARCH=arm64
           export SUBARCH=arm64
-          # Mencari defconfig secara otomatis
-          CONF=$(ls arch/arm64/configs/ | grep -E "rock|mt6789" | head -n 1)
-          if [ -z "$CONF" ]; then CONF="vendor/rock_defconfig"; fi
+          
+          # Pakai defconfig spesifik untuk Poco M5 (Rock/Tapa)
+          CONF="rock_defconfig"
           echo "Using config: $CONF"
           
           make O=out $CONF
           
+          # Proses masak dengan Clang
           make -j$(nproc --all) O=out \
                ARCH=arm64 \
                CC=clang \
@@ -51,3 +53,4 @@ jobs:
         with:
           name: Alien-Kernel-PocoM5
           path: out/arch/arm64/boot/Image.gz
+          
