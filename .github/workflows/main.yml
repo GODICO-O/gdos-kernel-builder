@@ -1,59 +1,32 @@
-name: Build GKI Picasso High-Perf
-on:
-  workflow_dispatch:
-
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Setup Environment
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y bc bison build-essential flex libssl-dev libelf-dev clang lld llvm
-
-      - name: Clone Picasso Source
-        run: |
-          # Dihapus bagian -b android12-5.10 supaya otomatis ambil default branch
-          git clone --depth=1 https://github.com/picasso09/android_kernel_gki-android12-9 kernel-source
-
-      - name: Integrate KernelSU (Latest)
-        run: |
-          cd kernel-source
-          # Menarik KernelSU terbaru langsung dari repo official Tiann
-          curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
-          echo "CONFIG_KSU=y" >> arch/arm64/configs/gki_defconfig
-
-      - name: Patch Config (LTO Active & Permissive)
-        run: |
-          cd kernel-source
-          CONF="arch/arm64/configs/gki_defconfig"
-          
-          # --- SELINUX: Setel ke DEVELOP & BOOTPARAM (Request Lo) ---
-          sed -i 's/CONFIG_SECURITY_SELINUX_DEVELOP=n/CONFIG_SECURITY_SELINUX_DEVELOP=y/g' $CONF
-          sed -i 's/CONFIG_SECURITY_SELINUX_BOOTPARAM=n/CONFIG_SECURITY_SELINUX_BOOTPARAM=y/g' $CONF
-          
-          # --- LTO: Kita pakai THIN (Performa tinggi, RAM Aman) ---
-          sed -i 's/CONFIG_LTO_CLANG_NONE=y/CONFIG_LTO_CLANG_THIN=y/g' $CONF
-          sed -i 's/CONFIG_LTO_CLANG_FULL=y/CONFIG_LTO_CLANG_THIN=y/g' $CONF
-          grep -q "CONFIG_LTO_CLANG_THIN=y" $CONF || echo "CONFIG_LTO_CLANG_THIN=y" >> $CONF
-
-          # --- FORCE PERMISSIVE CMDLINE ---
-          # Memaksa status permissive lewat command line kernel
-          echo "CONFIG_CMDLINE=\"androidboot.selinux=permissive\"" >> $CONF
-          echo "CONFIG_CMDLINE_FORCE=y" >> $CONF
-
       - name: Build Kernel
         run: |
-          cd kernel-source
-          # Generate config berdasarkan gki_defconfig
-          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1 gki_defconfig
+          CONF=arch/arm64/configs/gki_defconfig
           
-          # Kompilasi Image.gz (LTO Thin biasanya makan waktu 30-50 menit)
-          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1 -j$(nproc) Image.gz
-
-      - name: Upload Result
-        uses: actions/upload-artifact@v4
-        with:
-          name: Kernel-PocoM5-Picasso-Final
-          path: kernel-source/arch/arm64/boot/Image.gz
+          # --- KERNELSU NEXT (Terbaru) ---
+          curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s main
+          
+          # --- FIX MOUNTING /VENDOR (EROFS & FS) ---
+          echo "CONFIG_EROFS_FS=y" >> $CONF
+          echo "CONFIG_EROFS_FS_ZIP=y" >> $CONF
+          echo "CONFIG_EROFS_FS_PCPU_KTHREAD=y" >> $CONF
+          echo "CONFIG_EROFS_FS_PCPU_KTHREAD_HIPRI=y" >> $CONF
+          echo "CONFIG_OVERLAY_FS=y" >> $CONF
+          echo "CONFIG_UNICODE=y" >> $CONF
+          echo "CONFIG_FS_ENCRYPTION=y" >> $CONF
+          
+          # --- SELINUX DEVELOP & PERMISSIVE ---
+          sed -i 's/CONFIG_SECURITY_SELINUX_DEVELOP=n/CONFIG_SECURITY_SELINUX_DEVELOP=y/g' $CONF
+          echo "CONFIG_SECURITY_SELINUX_DEVELOP=y" >> $CONF
+          # Tambahan buat maksa permissive di beberapa source
+          echo "CONFIG_ALWAYS_ENFORCE=n" >> $CONF
+          
+          # --- ANTI-PANIC & STABILITY ---
+          # Matikan LTO karena log ramoops tadi indikasi driver mismatch
+          sed -i 's/CONFIG_LTO_CLANG_THIN=y/CONFIG_LTO_CLANG_NONE=y/g' $CONF
+          sed -i 's/CONFIG_LTO_CLANG_FULL=y/CONFIG_LTO_CLANG_NONE=y/g' $CONF
+          echo "CONFIG_LTO_CLANG_NONE=y" >> $CONF
+          
+          # --- CLEANING & BUILD ---
+          make O=out ARCH=arm64 $(echo $CONF | cut -d'/' -f4)
+          make -j$(nproc --all) O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip
           
