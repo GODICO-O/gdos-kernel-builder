@@ -1,4 +1,4 @@
-name: Build Kernel Picasso PE-Compatible Final (No-LTO)
+name: Build Kernel Picasso PE-Final (Safety Log)
 on:
   workflow_dispatch:
 
@@ -13,14 +13,15 @@ jobs:
 
       - name: Clone Picasso Source
         run: |
-          git clone --depth=1 https://github.com/picasso09/android_kernel_gki-android12-9 kernel-source
+          # Gunakan source DVWorkspaces sesuai saran Telegram agar lebih stabil
+          git clone --depth=1 https://github.com/DVWorkspaces/kernel_gki_android12-9 kernel-source
 
       - name: Integrate KernelSU
         run: |
           cd kernel-source
           curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
 
-      - name: Patch Config (Ultimate PE Compatibility)
+      - name: Patch Config (Fixing Boot & Adding Logs)
         run: |
           cd kernel-source
           CONF="arch/arm64/configs/gki_defconfig"
@@ -28,45 +29,42 @@ jobs:
           # --- 1. KERNELSU & OVERLAYFS ---
           echo "CONFIG_KSU=y" >> $CONF
           echo "CONFIG_OVERLAY_FS=y" >> $CONF
-          echo "CONFIG_OVERLAY_FS_REDIRECT_DIR=y" >> $CONF
           
-          # --- 2. EROFS & LZ4 (OBAT BOOTLOOP PE) ---
-          # Kita pastikan driver ini masuk ke dalam biner kernel
+          # --- 2. EROFS (PENTING BIAR GAK INVALID SUPERBLOCK) ---
           echo "CONFIG_EROFS_FS=y" >> $CONF
           echo "CONFIG_EROFS_FS_ZIP=y" >> $CONF
-          echo "CONFIG_EROFS_FS_PCPU_KTHREAD=y" >> $CONF
-          echo "CONFIG_EROFS_FS_PCPU_KTHREAD_HIPRI=y" >> $CONF
-          echo "CONFIG_LZ4_DECOMPRESS=y" >> $CONF
-          echo "CONFIG_LZ4HC_DECOMPRESS=y" >> $CONF
-          echo "CONFIG_LZ4_DECOMPRESS_FAST=y" >> $CONF
           
-          # --- 3. SELINUX PERMISSIVE (REVISI: ANTI BLANK) ---
-          # Kita pakai EXTEND, bukan FORCE. 
-          # FORCE bikin kernel gagal baca fstab EROFS dari vendor_boot.
+          # --- 3. SAFETY LOGS (BIAR TAHU PENYEBAB ERROR TANPA PC) ---
+          # Fitur Pstore: Nyimpen log di /sys/fs/pstore saat panic
+          echo "CONFIG_PSTORE=y" >> $CONF
+          echo "CONFIG_PSTORE_CONSOLE=y" >> $CONF
+          echo "CONFIG_PSTORE_PMSG=y" >> $CONF
+          echo "CONFIG_PSTORE_RAM=y" >> $CONF
+          echo "CONFIG_PANIC_TIMEOUT=30" >> $CONF
+          
+          # --- 4. SELINUX PERMISSIVE (Sesuai cara lo: EXTEND) ---
           sed -i 's/CONFIG_SECURITY_SELINUX_DEVELOP=n/CONFIG_SECURITY_SELINUX_DEVELOP=y/g' $CONF
           sed -i 's/CONFIG_SECURITY_SELINUX_BOOTPARAM=n/CONFIG_SECURITY_SELINUX_BOOTPARAM=y/g' $CONF
+          
+          # Pastikan tidak ada FORCE yang nyelip
+          sed -i '/CONFIG_CMDLINE_FORCE/d' $CONF
           echo "CONFIG_CMDLINE=\"androidboot.selinux=permissive androidboot.veritymode=logging\"" >> $CONF
           echo "CONFIG_CMDLINE_EXTEND=y" >> $CONF
-          # Hapus FORCE agar kernel mau dengerin instruksi mount dari sistem
-          sed -i '/CONFIG_CMDLINE_FORCE/d' $CONF
           
-          # --- 4. DISABLE LTO & OPTIMIZATION ---
+          # --- 5. DISABLE LTO ---
           sed -i 's/CONFIG_LTO_CLANG_THIN=y/CONFIG_LTO_CLANG_NONE=y/g' $CONF
           sed -i 's/CONFIG_LTO_CLANG_FULL=y/CONFIG_LTO_CLANG_NONE=y/g' $CONF
           echo "CONFIG_LTO_CLANG_NONE=y" >> $CONF
-          echo "CONFIG_THREAD_INFO_IN_TASK=y" >> $CONF
 
       - name: Build Kernel
         run: |
           cd kernel-source
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1 gki_defconfig
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1 olddefconfig
-          # Menggunakan -j$(nproc) untuk kecepatan maksimal
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1 -j$(nproc) Image.gz
 
       - name: Upload Result
         uses: actions/upload-artifact@v4
         with:
-          name: Kernel-PocoM5-PE-Final-NoLTO
+          name: Kernel-PocoM5-Final-Safety
           path: kernel-source/arch/arm64/boot/Image.gz
-          
