@@ -1,4 +1,4 @@
-name: Build Kernel Poco M5 Fixed
+name: Build GKI Picasso Poco M5
 on:
   workflow_dispatch:
 
@@ -6,22 +6,24 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Source
-        uses: actions/checkout@v4
-
-      - name: Install Dependencies
+      - name: Setup Environment
         run: |
           sudo apt-get update
-          sudo apt-get install -y bc build-essential flex bison lld llvm clang libssl-dev libelf-dev crossbuild-essential-arm64
+          sudo apt-get install -y bc bison build-essential flex libssl-dev libelf-dev clang lld llvm crossbuild-essential-arm64
+
+      - name: Clone Picasso Source
+        run: |
+          git clone --depth=1 https://github.com/picasso09/android_kernel_gki-android12-9 kernel-source
 
       - name: Build Kernel
         run: |
-          CONF=arch/arm64/configs/gki_defconfig
+          cd kernel-source
+          CONF="arch/arm64/configs/gki_defconfig"
           
-          # Setup KernelSU
+          # 1. INTEGRATE KERNELSU NEXT
           curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s main
           
-          # Fix EROFS & Mounting
+          # 2. FIX MOUNTING /VENDOR (EROFS & STORAGE) - WAJIB BUAT POCO M5
           echo "CONFIG_EROFS_FS=y" >> $CONF
           echo "CONFIG_EROFS_FS_ZIP=y" >> $CONF
           echo "CONFIG_EROFS_FS_PCPU_KTHREAD=y" >> $CONF
@@ -30,22 +32,37 @@ jobs:
           echo "CONFIG_UNICODE=y" >> $CONF
           echo "CONFIG_FS_ENCRYPTION=y" >> $CONF
           
-          # SELinux & Permissive
+          # 3. SELINUX DEVELOP & PERMISSIVE (Sesuai Request)
           sed -i 's/CONFIG_SECURITY_SELINUX_DEVELOP=n/CONFIG_SECURITY_SELINUX_DEVELOP=y/g' $CONF
+          sed -i 's/CONFIG_SECURITY_SELINUX_BOOTPARAM=n/CONFIG_SECURITY_SELINUX_BOOTPARAM=y/g' $CONF
           echo "CONFIG_ALWAYS_ENFORCE=n" >> $CONF
+          echo "CONFIG_CMDLINE=\"androidboot.selinux=permissive\"" >> $CONF
+          echo "CONFIG_CMDLINE_FORCE=y" >> $CONF
           
-          # Disable LTO
+          # 4. DISABLE LTO (Biar gak Panic/Mismatch Driver MediaTek)
           sed -i 's/CONFIG_LTO_CLANG_THIN=y/CONFIG_LTO_CLANG_THIN=n/g' $CONF
           sed -i 's/CONFIG_LTO_CLANG_FULL=y/CONFIG_LTO_CLANG_FULL=n/g' $CONF
           echo "CONFIG_LTO_CLANG_NONE=y" >> $CONF
           
-          # Build
-          make O=out ARCH=arm64 $(echo $CONF | cut -d'/' -f4)
-          make -j$(nproc --all) O=out ARCH=arm64 CC=clang LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- LLVM=1 LLVM_IAS=1
+          # 5. KOMPILASI
+          make O=out ARCH=arm64 gki_defconfig
+          make -j$(nproc --all) O=out ARCH=arm64 \
+               CC=clang \
+               LD=ld.lld \
+               AR=llvm-ar \
+               NM=llvm-nm \
+               OBJCOPY=llvm-objcopy \
+               OBJDUMP=llvm-objdump \
+               STRIP=llvm-strip \
+               CROSS_COMPILE=aarch64-linux-gnu- \
+               CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+               LLVM=1 \
+               LLVM_IAS=1 \
+               Image.gz
 
-      - name: Upload Artifact
+      - name: Upload Result
         uses: actions/upload-artifact@v4
         with:
-          name: Kernel-PocoM5-Fixed
-          path: out/arch/arm64/boot/Image.gz
+          name: Kernel-PocoM5-Picasso-Final
+          path: kernel-source/out/arch/arm64/boot/Image.gz
           
