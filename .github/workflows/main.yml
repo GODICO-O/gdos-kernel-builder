@@ -1,3 +1,19 @@
+name: Build Kernel Poco M5
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Source
+        uses: actions/checkout@v3
+
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bc build-essential flex bison lld llvm clang libssl-dev libelf-dev aarch64-linux-gnu-gcc
+
       - name: Build Kernel
         run: |
           CONF=arch/arm64/configs/gki_defconfig
@@ -6,7 +22,6 @@
           curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s main
           
           # --- FIX MOUNTING /VENDOR (EROFS & FS) ---
-          # Kita pakai echo >> biar pasti nambah di baris paling bawah
           echo "CONFIG_EROFS_FS=y" >> $CONF
           echo "CONFIG_EROFS_FS_ZIP=y" >> $CONF
           echo "CONFIG_EROFS_FS_PCPU_KTHREAD=y" >> $CONF
@@ -19,13 +34,12 @@
           sed -i 's/CONFIG_SECURITY_SELINUX_DEVELOP=n/CONFIG_SECURITY_SELINUX_DEVELOP=y/g' $CONF
           echo "CONFIG_ALWAYS_ENFORCE=n" >> $CONF
           
-          # --- DISABLE LTO (STABILITY FIRST) ---
-          # Kita paksa semua LTO jadi n
+          # --- DISABLE LTO (STABILITY) ---
           sed -i 's/CONFIG_LTO_CLANG_THIN=y/CONFIG_LTO_CLANG_THIN=n/g' $CONF
           sed -i 's/CONFIG_LTO_CLANG_FULL=y/CONFIG_LTO_CLANG_FULL=n/g' $CONF
           echo "CONFIG_LTO_CLANG_NONE=y" >> $CONF
           
-          # --- CLEANING & BUILD ---
+          # --- BUILD PROCESS ---
           make O=out ARCH=arm64 $(echo $CONF | cut -d'/' -f4)
           make -j$(nproc --all) O=out ARCH=arm64 \
                CC=clang \
@@ -39,4 +53,10 @@
                CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
                LLVM=1 \
                LLVM_IAS=1
-               
+
+      - name: Upload Image
+        uses: actions/upload-artifact@v3
+        with:
+          name: Kernel-PocoM5-Fixed
+          path: out/arch/arm64/boot/Image.gz
+          
