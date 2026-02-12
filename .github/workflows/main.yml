@@ -1,4 +1,4 @@
-name: Build Kernel Picasso PE-Final (Safety Log)
+name: Build Kernel Picasso Ultimate (SELinux-Dev & Safety Log)
 on:
   workflow_dispatch:
 
@@ -6,65 +6,75 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
+      - name: Maximize Build Space
+        uses: easimon/maximize-build-space@main
+        with:
+          root-reserve-mb: 8192
+          temp-reserve-mb: 2048
+          remove-dotnet: 'true'
+          remove-android: 'true'
+          remove-haskell: 'true'
+
       - name: Setup Environment
         run: |
           sudo apt-get update
-          sudo apt-get install -y bc bison build-essential flex libssl-dev libelf-dev clang lld llvm
+          sudo apt-get install -y bc bison build-essential flex libssl-dev libelf-dev clang lld llvm repo
 
-      - name: Clone Picasso Source
+      - name: Repo Sync (Full Source - Anti Drivers Error)
         run: |
-          # Gunakan source DVWorkspaces sesuai saran Telegram agar lebih stabil
-          git clone --depth=1 https://github.com/DVWorkspaces/kernel_gki_android12-9 kernel-source
+          mkdir kernel-source && cd kernel-source
+          # Menggunakan manifest resmi DVWorkspaces agar struktur folder GKI lengkap
+          repo init -u https://github.com/DVWorkspaces/kernel_gki_android12-9 -b nethunter
+          repo sync -c -j$(nproc) --force-sync --no-clone-bundle --no-tags
 
-      - name: Integrate KernelSU
+      - name: Patch Config (Fitur Sakti & Ultimate Debug)
         run: |
-          cd kernel-source
-          curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
-
-      - name: Patch Config (Fixing Boot & Adding Logs)
-        run: |
-          cd kernel-source
+          # Di struktur GKI, config utama ada di folder common/
+          cd kernel-source/common
           CONF="arch/arm64/configs/gki_defconfig"
           
-          # --- 1. KERNELSU & OVERLAYFS ---
-          echo "CONFIG_KSU=y" >> $CONF
-          echo "CONFIG_OVERLAY_FS=y" >> $CONF
+          # --- 1. INTEGRASI KERNELSU ---
+          curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
           
-          # --- 2. EROFS (PENTING BIAR GAK INVALID SUPERBLOCK) ---
-          echo "CONFIG_EROFS_FS=y" >> $CONF
-          echo "CONFIG_EROFS_FS_ZIP=y" >> $CONF
+          # --- 2. SELINUX PENTING (Biar 'Permissive' nancep) ---
+          sed -i 's/CONFIG_SECURITY_SELINUX_DEVELOP=n/CONFIG_SECURITY_SELINUX_DEVELOP=y/g' $CONF
+          sed -i 's/CONFIG_SECURITY_SELINUX_BOOTPARAM=n/CONFIG_SECURITY_SELINUX_BOOTPARAM=y/g' $CONF
+          echo "CONFIG_SECURITY_SELINUX_DEVELOP=y" >> $CONF
+          echo "CONFIG_SECURITY_SELINUX_BOOTPARAM=y" >> $CONF
           
-          # --- 3. SAFETY LOGS (BIAR TAHU PENYEBAB ERROR TANPA PC) ---
-          # Fitur Pstore: Nyimpen log di /sys/fs/pstore saat panic
+          # --- 3. CMDLINE EXTEND (Anti Panic Invalid Superblock) ---
+          sed -i '/CONFIG_CMDLINE_FORCE/d' $CONF
+          echo "CONFIG_CMDLINE=\"androidboot.selinux=permissive androidboot.veritymode=logging\"" >> $CONF
+          echo "CONFIG_CMDLINE_EXTEND=y" >> $CONF
+
+          # --- 4. SAFETY LOGS (PSTORE/RAMOOPS) ---
+          # Fitur 'Kotak Hitam' biar bisa baca log error di Recovery
           echo "CONFIG_PSTORE=y" >> $CONF
           echo "CONFIG_PSTORE_CONSOLE=y" >> $CONF
           echo "CONFIG_PSTORE_PMSG=y" >> $CONF
           echo "CONFIG_PSTORE_RAM=y" >> $CONF
           echo "CONFIG_PANIC_TIMEOUT=30" >> $CONF
+
+          # --- 5. FILESYSTEM & RAM OPTIMASI ---
+          echo "CONFIG_EROFS_FS=y" >> $CONF
+          echo "CONFIG_EROFS_FS_ZIP=y" >> $CONF
+          echo "CONFIG_OVERLAY_FS=y" >> $CONF
+          echo "CONFIG_ZRAM=y" >> $CONF
           
-          # --- 4. SELINUX PERMISSIVE (Sesuai cara lo: EXTEND) ---
-          sed -i 's/CONFIG_SECURITY_SELINUX_DEVELOP=n/CONFIG_SECURITY_SELINUX_DEVELOP=y/g' $CONF
-          sed -i 's/CONFIG_SECURITY_SELINUX_BOOTPARAM=n/CONFIG_SECURITY_SELINUX_BOOTPARAM=y/g' $CONF
-          
-          # Pastikan tidak ada FORCE yang nyelip
-          sed -i '/CONFIG_CMDLINE_FORCE/d' $CONF
-          echo "CONFIG_CMDLINE=\"androidboot.selinux=permissive androidboot.veritymode=logging\"" >> $CONF
-          echo "CONFIG_CMDLINE_EXTEND=y" >> $CONF
-          
-          # --- 5. DISABLE LTO ---
+          # --- 6. DISABLE LTO (Biar build gak 'Killed' di GitHub) ---
           sed -i 's/CONFIG_LTO_CLANG_THIN=y/CONFIG_LTO_CLANG_NONE=y/g' $CONF
           sed -i 's/CONFIG_LTO_CLANG_FULL=y/CONFIG_LTO_CLANG_NONE=y/g' $CONF
           echo "CONFIG_LTO_CLANG_NONE=y" >> $CONF
 
-      - name: Build Kernel
+      - name: Build Kernel (Official GKI Build Script)
         run: |
           cd kernel-source
-          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1 gki_defconfig
-          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1 olddefconfig
-          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- LLVM=1 LLVM_IAS=1 -j$(nproc) Image.gz
+          # Memakai build.sh agar folder drivers/, fs/, include/ terbaca semua
+          LTO=0 BUILD_CONFIG=common/build.config.gki.aarch64 build/build.sh
 
       - name: Upload Result
         uses: actions/upload-artifact@v4
         with:
-          name: Kernel-PocoM5-Final-Safety
-          path: kernel-source/arch/arm64/boot/Image.gz
+          name: Kernel-Picasso-Ultimate-GKI
+          path: kernel-source/out/android12-5.10/dist/Image.gz
+          
