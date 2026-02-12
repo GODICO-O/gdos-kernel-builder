@@ -12,7 +12,7 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y bc build-essential flex bison lld llvm clang libssl-dev libelf-dev aarch64-linux-gnu-gcc
+          sudo apt-get install -y bc build-essential flex bison lld llvm clang libssl-dev libelf-dev crossbuild-essential-arm64
 
       - name: Build Kernel
         run: |
@@ -23,7 +23,6 @@ jobs:
           curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s main
           
           # 2. FIX MOUNTING /VENDOR (EROFS & STORAGE)
-          # Ini buat benerin 'Invalid ext4 superblock' di log ramoops lo
           echo "CONFIG_EROFS_FS=y" >> $CONF
           echo "CONFIG_EROFS_FS_ZIP=y" >> $CONF
           echo "CONFIG_EROFS_FS_PCPU_KTHREAD=y" >> $CONF
@@ -33,18 +32,16 @@ jobs:
           echo "CONFIG_FS_ENCRYPTION=y" >> $CONF
           
           # 3. SELINUX DEVELOP & PERMISSIVE
-          # Supaya root KernelSU lancar dan nggak ketahan sistem
           sed -i 's/CONFIG_SECURITY_SELINUX_DEVELOP=n/CONFIG_SECURITY_SELINUX_DEVELOP=y/g' $CONF
           echo "CONFIG_ALWAYS_ENFORCE=n" >> $CONF
           
           # 4. DISABLE LTO (STABILITAS)
-          # Memastikan driver MediaTek nggak konflik/mismatch
           sed -i 's/CONFIG_LTO_CLANG_THIN=y/CONFIG_LTO_CLANG_THIN=n/g' $CONF
           sed -i 's/CONFIG_LTO_CLANG_FULL=y/CONFIG_LTO_CLANG_FULL=n/g' $CONF
           echo "CONFIG_LTO_CLANG_NONE=y" >> $CONF
           
           # 5. PROSES KOMPILASI
-          # Menggunakan full LLVM toolchain untuk standar GKI
+          # Menggunakan full LLVM toolchain
           make O=out ARCH=arm64 $(echo $CONF | cut -d'/' -f4)
           make -j$(nproc --all) O=out ARCH=arm64 \
                CC=clang \
