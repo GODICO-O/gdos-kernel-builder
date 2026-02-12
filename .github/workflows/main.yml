@@ -19,17 +19,18 @@ jobs:
         run: |
           cd kernel-source
           
-          # Bersihkan sisa build lama
+          # Bersihkan out folder
           rm -rf out
           mkdir out
           
           CONF="arch/arm64/configs/gki_defconfig"
           
           # 1. INTEGRATE KERNELSU NEXT
+          # Kita hapus folder lama dan jalankan setup
           rm -rf KernelSU
           curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s main
           
-          # 2. FIX MOUNTING /VENDOR & EROFS
+          # 2. FIX MOUNTING /VENDOR & EROFS (Penting buat Poco M5)
           sed -i '/CONFIG_EROFS_FS/d' $CONF
           sed -i '/CONFIG_OVERLAY_FS/d' $CONF
           echo "CONFIG_EROFS_FS=y" >> $CONF
@@ -40,12 +41,10 @@ jobs:
           echo "CONFIG_UNICODE=y" >> $CONF
           echo "CONFIG_FS_ENCRYPTION=y" >> $CONF
           
-          # 3. SELINUX & PERMISSIVE (FULL ATTACK)
-          # Hapus dulu baris lama biar ga duplikat
+          # 3. SELINUX & PERMISSIVE (Sesuai Request: Full Jebol)
           sed -i '/CONFIG_SECURITY_SELINUX_DEVELOP/d' $CONF
           sed -i '/CONFIG_SECURITY_SELINUX_BOOTPARAM/d' $CONF
           sed -i '/CONFIG_ALWAYS_ENFORCE/d' $CONF
-          
           echo "CONFIG_SECURITY_SELINUX_DEVELOP=y" >> $CONF
           echo "CONFIG_SECURITY_SELINUX_BOOTPARAM=y" >> $CONF
           echo "CONFIG_ALWAYS_ENFORCE=n" >> $CONF
@@ -55,20 +54,20 @@ jobs:
           echo "CONFIG_CMDLINE=\"androidboot.selinux=permissive\"" >> $CONF
           echo "CONFIG_CMDLINE_FORCE=y" >> $CONF
           
-          # 4. DISABLE LTO (Biar stabil & gak Error 2)
+          # 4. DISABLE LTO (Mencegah Linker Error 2)
           sed -i 's/CONFIG_LTO_CLANG_THIN=y/CONFIG_LTO_CLANG_NONE=y/g' $CONF
           sed -i 's/CONFIG_LTO_CLANG_FULL=y/CONFIG_LTO_CLANG_NONE=y/g' $CONF
           sed -i '/CONFIG_LTO_CLANG_NONE/d' $CONF
           echo "CONFIG_LTO_CLANG_NONE=y" >> $CONF
           
           # 5. KOMPILASI
-          # Step A: Load config awal
+          # Step A: Load Config
           make O=out ARCH=arm64 gki_defconfig
           
-          # Step B: Otomatis jawab "Y" buat fitur baru (Anti-Stuck/Error)
+          # Step B: Selesaikan konflik config baru secara otomatis
           make O=out ARCH=arm64 olddefconfig
           
-          # Step C: Masak sampe mateng
+          # Step C: Kompilasi utama (Verbose 1 untuk debug)
           make -j$(nproc --all) O=out ARCH=arm64 \
                CC=clang \
                LD=ld.lld \
