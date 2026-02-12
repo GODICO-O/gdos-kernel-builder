@@ -26,12 +26,10 @@ jobs:
           CONF="arch/arm64/configs/gki_defconfig"
           
           # 1. INTEGRATE KERNELSU NEXT
-          # Kita hapus folder KernelSU lama kalau ada supaya fresh
           rm -rf KernelSU
           curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s main
           
           # 2. FIX MOUNTING /VENDOR & EROFS
-          # Kita gunakan sed untuk memastikan tidak ada duplikasi config
           sed -i '/CONFIG_EROFS_FS/d' $CONF
           sed -i '/CONFIG_OVERLAY_FS/d' $CONF
           echo "CONFIG_EROFS_FS=y" >> $CONF
@@ -42,20 +40,35 @@ jobs:
           echo "CONFIG_UNICODE=y" >> $CONF
           echo "CONFIG_FS_ENCRYPTION=y" >> $CONF
           
-          # 3. SELINUX & PERMISSIVE
-          sed -i 's/CONFIG_SECURITY_SELINUX_DEVELOP=n/CONFIG_SECURITY_SELINUX_DEVELOP=y/g' $CONF
-          sed -i 's/CONFIG_SECURITY_SELINUX_BOOTPARAM=n/CONFIG_SECURITY_SELINUX_BOOTPARAM=y/g' $CONF
+          # 3. SELINUX & PERMISSIVE (FULL ATTACK)
+          # Hapus dulu baris lama biar ga duplikat
+          sed -i '/CONFIG_SECURITY_SELINUX_DEVELOP/d' $CONF
+          sed -i '/CONFIG_SECURITY_SELINUX_BOOTPARAM/d' $CONF
+          sed -i '/CONFIG_ALWAYS_ENFORCE/d' $CONF
+          
+          echo "CONFIG_SECURITY_SELINUX_DEVELOP=y" >> $CONF
+          echo "CONFIG_SECURITY_SELINUX_BOOTPARAM=y" >> $CONF
           echo "CONFIG_ALWAYS_ENFORCE=n" >> $CONF
+          
+          # Force Permissive lewat CMDLINE
+          sed -i '/CONFIG_CMDLINE/d' $CONF
           echo "CONFIG_CMDLINE=\"androidboot.selinux=permissive\"" >> $CONF
           echo "CONFIG_CMDLINE_FORCE=y" >> $CONF
           
-          # 4. DISABLE LTO (PENTING: Kita matikan total biar gak Error 2 lagi)
+          # 4. DISABLE LTO (Biar stabil & gak Error 2)
           sed -i 's/CONFIG_LTO_CLANG_THIN=y/CONFIG_LTO_CLANG_NONE=y/g' $CONF
           sed -i 's/CONFIG_LTO_CLANG_FULL=y/CONFIG_LTO_CLANG_NONE=y/g' $CONF
+          sed -i '/CONFIG_LTO_CLANG_NONE/d' $CONF
           echo "CONFIG_LTO_CLANG_NONE=y" >> $CONF
           
-          # 5. KOMPILASI (Ditambah V=1 untuk debug jika gagal)
+          # 5. KOMPILASI
+          # Step A: Load config awal
           make O=out ARCH=arm64 gki_defconfig
+          
+          # Step B: Otomatis jawab "Y" buat fitur baru (Anti-Stuck/Error)
+          make O=out ARCH=arm64 olddefconfig
+          
+          # Step C: Masak sampe mateng
           make -j$(nproc --all) O=out ARCH=arm64 \
                CC=clang \
                LD=ld.lld \
@@ -76,3 +89,4 @@ jobs:
         with:
           name: Kernel-PocoM5-Picasso-Final
           path: kernel-source/out/arch/arm64/boot/Image.gz
+          
